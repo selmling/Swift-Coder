@@ -20,10 +20,12 @@ func handleKeyPress(
         lastSelectedResponse = "Yes"
         isSelectionConfirmed = false
         saveAnnotation("Yes")
+        return nil
     case "n":
         lastSelectedResponse = "No"
         isSelectionConfirmed = false
         saveAnnotation("No")
+        return nil
     default:
         break
     }
