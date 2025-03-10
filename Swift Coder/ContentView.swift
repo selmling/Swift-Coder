@@ -19,40 +19,60 @@ struct ContentView: View {
     @State private var lastSelectedResponse: String?
     @State private var isSelectionConfirmed = false
     @State private var alertIsActive = false
-    @State private var isSidebarVisible = false // ✅ Tracks sidebar state
-
+    @State private var userName: String = ""     // User sign‑in name
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @Binding var showSignInSheet: Bool
+    @State private var isPlaybackPending: Bool = false
+    @State private var isSignedIn: Bool = false
+    
     var body: some View {
-        NavigationView {
-            if isSidebarVisible {
-                SidebarView(videoURLs: videoURLs) { selectedVideo in
-                    playVideo(url: selectedVideo)
-                    currentVideoIndex = videoURLs.firstIndex(of: selectedVideo) ?? 0
-                }
-            }
-
-            VStack {
-                if videoURLs.isEmpty {
-                    SelectVideosView(loadVideos: loadVideos, selectVideoFolder: selectVideoFolder)
-                } else {
-                    VideoPlayerView(player: player) // ✅ Now properly used inside the view hierarchy
-                    AnnotationView(
-                        lastSelectedResponse: $lastSelectedResponse,
-                        isSelectionConfirmed: $isSelectionConfirmed,
-                        saveAnnotation: saveAnnotation
-                    )
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView(videoURLs: videoURLs,
+                        onSelectVideo: { selectedVideo in
+                            playVideo(url: selectedVideo)
+                            currentVideoIndex = videoURLs.firstIndex(of: selectedVideo) ?? 0
+                        },
+                        userName: userName,
+                        onSignInAgain: {
+                            showSignInSheet = true
+                            isSignedIn = false
+                        })
+        } detail: {
+            if videoURLs.isEmpty {
+                SelectVideosView(loadVideos: loadVideos, selectVideoFolder: selectVideoFolder)
+            } else {
+                VStack {
+                    VideoPlayerView(player: player)
+                    if !isSignedIn {
+                        Text("Please sign in to annotate.")
+                            .foregroundColor(.secondary)
+                            .padding()
+                    } else {
+                        AnnotationView(
+                            lastSelectedResponse: $lastSelectedResponse,
+                            isSelectionConfirmed: $isSelectionConfirmed,
+                            saveAnnotation: saveAnnotation
+                        )
+                    }
                 }
             }
         }
         .onAppear {
+            columnVisibility = .detailOnly
+            // Set minimum window size
             if let window = NSApplication.shared.windows.first {
                 window.minSize = NSSize(width: 600, height: 370)
             }
-        }
-        .frame(minWidth: 500, minHeight: 500)
-        .padding()
-        .onAppear {
+            // Set up key handling
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                if alertIsActive { return event } // ✅ Ignore keys if alert is active
+                // If an alert is active, just return the event
+                if alertIsActive { return event }
+                // Check if the main window has an attached sheet (i.e. the sign-in sheet)
+                if let mainWindow = NSApplication.shared.mainWindow,
+                   mainWindow.attachedSheet != nil {
+                    // If a sheet is attached, don't handle the event here.
+                    return event
+                }
                 return handleKeyPress(event,
                                       lastSelectedResponse: &lastSelectedResponse,
                                       isSelectionConfirmed: &isSelectionConfirmed,
@@ -60,12 +80,19 @@ struct ContentView: View {
                                       playNextVideo: playNextVideo)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: { isSidebarVisible.toggle() }) {
-                    Image(systemName: "sidebar.left") // ✅ Standard macOS sidebar toggle icon
+        .frame(minWidth: 500, minHeight: 500)
+        .padding()
+        .sheet(isPresented: $showSignInSheet, onDismiss: {
+            if !userName.trimmingCharacters(in: .whitespaces).isEmpty {
+                isSignedIn = true
+                if isPlaybackPending && !videoURLs.isEmpty {
+                    playVideo(url: videoURLs[currentVideoIndex])
+                    isPlaybackPending = false
                 }
             }
+        }) {
+            SignInView(userName: $userName)
+                .interactiveDismissDisabled(true) 
         }
     }
     
@@ -98,7 +125,12 @@ struct ContentView: View {
             
             if let nextUnannotated = videoURLs.first {
                 currentVideoIndex = 0
-                playVideo(url: nextUnannotated)
+                if userName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    isPlaybackPending = true
+                    showSignInSheet = true
+                } else {
+                    playVideo(url: nextUnannotated)
+                }
             } else {
                 print("✅ All videos are already annotated.")
                 showCompletionAlert()
@@ -154,13 +186,15 @@ struct ContentView: View {
             return
         }
 
-        let annotationFileName = videoURLs[currentVideoIndex]
-            .deletingPathExtension()
-            .appendingPathExtension("json")
-            .lastPathComponent
+        let baseName = videoURLs[currentVideoIndex].deletingPathExtension().lastPathComponent
+        let annotationFileName = "\(baseName)_\(userName).json"
+        
         let annotationFileURL = videoFolderURL.appendingPathComponent(annotationFileName)
 
-        let annotationData: [String: String] = ["response": response]
+        let annotationData: [String: String] = [
+                "response": response,
+                "user": userName  // <-- This line adds the username
+            ]
 
         do {
             let data = try JSONSerialization.data(withJSONObject: annotationData, options: .prettyPrinted)

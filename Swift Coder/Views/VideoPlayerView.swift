@@ -17,10 +17,8 @@ struct VideoPlayerView: View {
                 VideoPlayer(player: player)
                     .frame(height: 400)
             } else {
-                Text("No video selected")
+                Text("No media selected")
                     .frame(height: 400)
-                    .background(Color.black.opacity(0.1))
-                    .cornerRadius(8)
             }
         }
     }

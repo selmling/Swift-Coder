@@ -9,10 +9,20 @@ import SwiftUI
 
 @main
 struct Swift_CoderApp: App {
+    @State private var showSignInSheet: Bool = false
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(showSignInSheet: $showSignInSheet)
         }
-        .defaultSize(width: 800, height: 494) // Golden ratio size
+        .commands {
+            // Insert our "Sign in…" command into the existing File menu.
+            CommandGroup(after: .newItem) {
+                Button("Sign in…") {
+                    showSignInSheet = true
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+            }
+        }
     }
 }
