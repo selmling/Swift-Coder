@@ -42,7 +42,6 @@ struct AnnotationView: View {
         Button(response) {
             lastSelectedResponse = response
             isSelectionConfirmed = false
-            saveAnnotation(response) // ✅ Calls the save function
         }
         .keyboardShortcut(response == "Yes" ? "y" : "n")
         .buttonStyle(.plain)

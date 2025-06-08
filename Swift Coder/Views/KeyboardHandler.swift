@@ -12,32 +12,32 @@ func handleKeyPress(
     lastSelectedResponse: inout String?,
     isSelectionConfirmed: inout Bool,
     saveAnnotation: (String) -> Void,
-    playNextVideo: () -> Void
+    playNextVideo: () -> Void,
+    togglePlayPause: () -> Void
 ) -> NSEvent? {
-    
+
     switch event.charactersIgnoringModifiers {
-    case "y":
+    case "y", "Y":
         lastSelectedResponse = "Yes"
         isSelectionConfirmed = false
         saveAnnotation("Yes")
         return nil
-    case "n":
+    case "n", "N":
         lastSelectedResponse = "No"
         isSelectionConfirmed = false
         saveAnnotation("No")
         return nil
-    default:
-        break
-    }
-
-    if event.keyCode == 36 || event.keyCode == 76 { // Enter or Return key
-        if lastSelectedResponse != nil {
+    case "\r":  // Enter/Return
+        if let response = lastSelectedResponse {
             isSelectionConfirmed = true
-            lastSelectedResponse = nil // ✅ Reset selection before advancing
+            saveAnnotation(response)
             playNextVideo()
         }
         return nil
+    case " ":  // Spacebar
+        togglePlayPause()
+        return nil
+    default:
+        return event
     }
-
-    return event
 }

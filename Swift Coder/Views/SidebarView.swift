@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SidebarView: View {
     var videoURLs: [URL]
+    var currentVideo: URL?
     var onSelectVideo: (URL) -> Void
     var userName: String  // The current signed‑in name
     var onSignInAgain: () -> Void  // Callback to re-trigger sign in
@@ -33,9 +34,13 @@ struct SidebarView: View {
                 .padding(.bottom, 5)
 
             List(videoURLs, id: \.self) { video in
-                Button(video.lastPathComponent) {
-                    onSelectVideo(video)
-                }
+                Button(action: { onSelectVideo(video) }) {
+                        Text(video.lastPathComponent)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(video == currentVideo ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .cornerRadius(6)
+                    }
                 .buttonStyle(.plain)
                 .foregroundColor(.primary)
             }

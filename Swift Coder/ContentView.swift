@@ -9,7 +9,8 @@
 
 import SwiftUI
 import AVKit
-import AppKit
+import UniformTypeIdentifiers
+import AVFoundation
 
 struct ContentView: View {
     @State private var videoURLs: [URL] = []
@@ -24,13 +25,18 @@ struct ContentView: View {
     @Binding var showSignInSheet: Bool
     @State private var isPlaybackPending: Bool = false
     @State private var isSignedIn: Bool = false
+    @State private var currentVideo: URL? = nil
+    @State private var isLoading: Bool = false
+    @State private var preloadPlayers: [Int: AVPlayerItem] = [:]
     
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(videoURLs: videoURLs,
+                        currentVideo: currentVideo,
                         onSelectVideo: { selectedVideo in
                             playVideo(url: selectedVideo)
                             currentVideoIndex = videoURLs.firstIndex(of: selectedVideo) ?? 0
+                            currentVideo = selectedVideo
                         },
                         userName: userName,
                         onSignInAgain: {
@@ -38,11 +44,21 @@ struct ContentView: View {
                             isSignedIn = false
                         })
         } detail: {
-            if videoURLs.isEmpty {
+            if isLoading {
+                ProgressView("Loading videos...")
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if videoURLs.isEmpty {
                 SelectVideosView(loadVideos: loadVideos, selectVideoFolder: selectVideoFolder)
             } else {
                 VStack {
-                    VideoPlayerView(player: player)
+                    if let avp = player {
+                        AVPlayerViewContainer(player: avp, showsControls: true)
+                            .frame(minWidth: 600, minHeight: 400)
+                    } else {
+                        Text("Loading…")
+                            .frame(minWidth: 600, minHeight: 400)
+                    }
                     if !isSignedIn {
                         Text("Please sign in to annotate.")
                             .foregroundColor(.secondary)
@@ -73,11 +89,14 @@ struct ContentView: View {
                     // If a sheet is attached, don't handle the event here.
                     return event
                 }
-                return handleKeyPress(event,
-                                      lastSelectedResponse: &lastSelectedResponse,
-                                      isSelectionConfirmed: &isSelectionConfirmed,
-                                      saveAnnotation: saveAnnotation,
-                                      playNextVideo: playNextVideo)
+                return handleKeyPress(
+                    event,
+                    lastSelectedResponse: &lastSelectedResponse,
+                    isSelectionConfirmed: &isSelectionConfirmed,
+                    saveAnnotation: saveAnnotation,
+                    playNextVideo: playNextVideo,
+                    togglePlayPause: togglePlayPause
+                )
             }
         }
         .frame(minWidth: 500, minHeight: 500)
@@ -85,10 +104,15 @@ struct ContentView: View {
         .sheet(isPresented: $showSignInSheet, onDismiss: {
             if !userName.trimmingCharacters(in: .whitespaces).isEmpty {
                 isSignedIn = true
-                if isPlaybackPending && !videoURLs.isEmpty {
-                    playVideo(url: videoURLs[currentVideoIndex])
-                    isPlaybackPending = false
-                }
+                if isPlaybackPending {
+                            if let next = nextUnannotatedIndex() {
+                                currentVideoIndex = next
+                                playVideo(url: videoURLs[next])
+                            } else {
+                                showCompletionAlert()
+                            }
+                            isPlaybackPending = false
+                        }
             }
         }) {
             SignInView(userName: $userName)
@@ -109,40 +133,55 @@ struct ContentView: View {
     }
 
     private func loadVideos(from folderURL: URL) {
-        do {
-            videoFolderURL = folderURL
-            
-            let videoExtensions = ["mp4", "mov", "m4v"]
-            let files = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-            
-            videoURLs = files
-                .filter { videoExtensions.contains($0.pathExtension.lowercased()) }
-                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-                .filter {
-                    let jsonFileURL = folderURL.appendingPathComponent($0.deletingPathExtension().appendingPathExtension("json").lastPathComponent)
-                    return !FileManager.default.fileExists(atPath: jsonFileURL.path)
-                }
-            
-            if let nextUnannotated = videoURLs.first {
-                currentVideoIndex = 0
-                if userName.trimmingCharacters(in: .whitespaces).isEmpty {
-                    isPlaybackPending = true
-                    showSignInSheet = true
-                } else {
-                    playVideo(url: nextUnannotated)
-                }
-            } else {
-                print("✅ All videos are already annotated.")
-                showCompletionAlert()
-            }
-        } catch {
-            print("❌ Error loading videos:", error.localizedDescription)
+      isLoading = true
+      DispatchQueue.global(qos: .userInitiated).async {
+        let exts = ["mp4","mov","m4v"]
+        let all = (try? FileManager.default
+                    .contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))
+                  ?? []
+        let videos = all
+          .filter { exts.contains($0.pathExtension.lowercased()) }
+          .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        DispatchQueue.main.async {
+          videoFolderURL = folderURL
+          videoURLs = videos
+          isLoading = false
+
+          // we haven't signed in yet, so buffer playback
+          isPlaybackPending = true
+          showSignInSheet = true
+        }
+      }
+    }
+
+    
+    private func preloadUpcomingVideos() {
+        preloadPlayers.removeAll()
+
+        let preloadRange = (currentVideoIndex + 1)...min(currentVideoIndex + 100, videoURLs.count - 1)
+
+        for i in preloadRange {
+            let url = videoURLs[i]
+            let asset = AVURLAsset(url: url)
+            let item = AVPlayerItem(asset: asset)
+            item.preferredForwardBufferDuration = 5
+            preloadPlayers[i] = item
         }
     }
 
     private func playVideo(url: URL) {
-        player = AVPlayer(url: url)
+        let index = videoURLs.firstIndex(of: url) ?? 0
+
+        if let preloadedItem = preloadPlayers[index] {
+            player = AVPlayer(playerItem: preloadedItem)
+        } else {
+            player = AVPlayer(url: url)
+        }
+
+        currentVideo = url
         print("🎬 Now Playing:", url.lastPathComponent)
+
+        preloadUpcomingVideos()
     }
 
     private func playNextVideo() {
@@ -152,9 +191,13 @@ struct ContentView: View {
             return
         }
         currentVideoIndex += 1
-        playVideo(url: videoURLs[currentVideoIndex])
         lastSelectedResponse = nil
         isSelectionConfirmed = false
+
+        // Slight delay to allow UI update before video load
+        DispatchQueue.main.async {
+            playVideo(url: videoURLs[currentVideoIndex])
+        }
     }
 
     private func annotationView() -> some View {
@@ -188,20 +231,53 @@ struct ContentView: View {
 
         let baseName = videoURLs[currentVideoIndex].deletingPathExtension().lastPathComponent
         let annotationFileName = "\(baseName)_\(userName).json"
-        
         let annotationFileURL = videoFolderURL.appendingPathComponent(annotationFileName)
 
         let annotationData: [String: String] = [
-                "response": response,
-                "user": userName  // <-- This line adds the username
-            ]
+            "response": response,
+            "user": userName
+        ]
 
-        do {
-            let data = try JSONSerialization.data(withJSONObject: annotationData, options: .prettyPrinted)
-            try data.write(to: annotationFileURL, options: .atomic)
-            print("✅ Saved annotation at: \(annotationFileURL.path)")
-        } catch {
-            print("❌ Error saving annotation:", error.localizedDescription)
+        DispatchQueue.global(qos: .background).async {
+            do {
+                let data = try JSONSerialization.data(withJSONObject: annotationData, options: .prettyPrinted)
+                try data.write(to: annotationFileURL, options: .atomic)
+                print("✅ Saved annotation at: \(annotationFileURL.path)")
+            } catch {
+                print("❌ Error saving annotation:", error.localizedDescription)
+            }
+        }
+    }
+    
+    /// Returns the index of the first video without a `<basename>_<userName>.json`.
+        /// If they’re all annotated, returns `nil`.
+        private func nextUnannotatedIndex() -> Int? {
+          guard let folder = videoFolderURL,
+                !userName.trimmingCharacters(in: .whitespaces).isEmpty
+          else { return nil }
+
+          return videoURLs.firstIndex { url in
+            let base     = url.deletingPathExtension().lastPathComponent
+            let jsonName = "\(base)_\(userName).json"
+            let jsonURL  = folder.appendingPathComponent(jsonName)
+            return !FileManager.default.fileExists(atPath: jsonURL.path)
+          }
+        }
+    
+    private func togglePlayPause() {
+        guard let player = player else {
+            print("⚠️ No player loaded")
+            return
+        }
+
+        if player.currentItem?.currentTime() == player.currentItem?.duration {
+            // If the video already finished, rewind to start
+            player.seek(to: .zero)
+            player.play()
+        } else if player.timeControlStatus == .playing {
+            player.pause()
+        } else {
+            player.play()
         }
     }
 }

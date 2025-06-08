@@ -9,17 +9,18 @@ import SwiftUI
 import AVKit
 
 struct VideoPlayerView: View {
-    var player: AVPlayer? // ✅ Accepts player from ContentView.swift
+    let player: AVPlayer?
 
     var body: some View {
-        Group {
-            if let player = player {
-                VideoPlayer(player: player)
-                    .frame(height: 400)
-            } else {
-                Text("No media selected")
-                    .frame(height: 400)
-            }
+        if let player = player {
+            // ▶︎ Use our AVPlayerViewContainer instead of VideoPlayer
+            AVPlayerViewContainer(player: player)
+                // You can give it a minimum height or aspect ratio if desired:
+                .frame(minHeight: 240)
+        } else {
+            Text("No video selected")
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
