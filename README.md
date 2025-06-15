@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".../icon.png" width="128" alt="Swift Coder App Icon" />
+  <img src="Swift Coder/Swift Coder/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png" width="128" alt="Swift Coder App Icon" />
   <br>
   <a href="https://github.com/selmling/Swift-Coder/releases/latest">
     <img src="https://img.shields.io/github/v/release/selmling/Swift-Coder" alt="Latest Release">
