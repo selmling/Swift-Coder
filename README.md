@@ -3,7 +3,12 @@
 <p align="center">
   <img src="https://github.com/selmling/Swift-Coder/blob/main/Swift%20Coder/Assets.xcassets/AppIcon.appiconset/icon_128x128%402x.png?raw=true" alt="Swift Coder's custom image"/>
   <br/>
-  [![Latest Release](https://img.shields.io/github/v/release/selmling/Swift-Coder)](https://github.com/selmling/Swift-Coder/releases/latest)
+  <a href="https://github.com/selmling/Swift-Coder/releases/latest">
+    <img
+      src="https://img.shields.io/github/v/release/selmling/Swift-Coder"
+      alt="Latest Release"
+    />
+  </a>
 </p>
 
 Annotate video clips swiftly ⚡️
